@@ -6,6 +6,8 @@
 
 std::vector<int> data;
 
+std::vector<int> ret_addr_stack;
+
 std::map<std::string, std::function<void(void)>> word_map;
 
 void word_add() {
@@ -125,6 +127,19 @@ void word_rot() {
     data.at(data.size() - 3) = second_word;
 }
 
+void word_less() {
+    int second_word = data.back();
+    data.pop_back();
+    int first_word = data.back();
+    data.pop_back();
+    bool comp_res = second_word < first_word;
+    if (comp_res) {
+        data.push_back(0);
+    } else {
+        data.push_back(-1);
+    }
+}
+
 void execute_word(std::string& word) {
     if (word_map.count(word)) {
         auto fun = word_map[word];
@@ -149,7 +164,7 @@ void execute_vector_of_words(std::vector<std::string>* words) {
     for (int i = 0; i < words->size(); ++i) {
         auto&& word = words->at(i);
         if (word == ":") {
-            // Do functions ever need to be deallocated??
+            // TODO Do functions ever need to be deallocated??
             // falls ja, hier gescheid managen
             std::vector<std::string>* fun_words = new std::vector<std::string>();
             i++;
@@ -175,6 +190,32 @@ void execute_vector_of_words(std::vector<std::string>* words) {
             create_function(name, fun_words);
             continue;
         }
+        if (word == "if") {
+            // TODO if else, nicht nur if
+
+
+            int flag = data.back();
+            data.pop_back();
+            // if the branch isnt taken, set i to the word before the then
+            // the iteration will increment to then, which gets ingored and the execution proceeds normally afterwards
+            if (flag == 0) {
+                int target_i = i;
+                auto&& target_word = word;
+                while (target_word != "then") {
+                    target_i++;
+                    target_word = words->at(target_i);
+                }
+                target_i--;
+                i = target_i;
+                continue;
+            }
+            // das nächste word wird normal ausgeführt
+            // wenn das then erreicht wird, wird es übersprungen und danach ist das if vorbei
+            continue;
+        }
+        if (word == "then") {
+            continue;
+        }
         execute_word(word);
     }
 }
@@ -198,6 +239,9 @@ int main() {
     word_map.emplace("over", word_over);
     word_map.emplace("swap", word_swap);
     word_map.emplace("rot", word_rot);
+
+    // related to if
+    word_map.emplace("<", word_less);
 
     word_map.emplace("print_top", word_print_top);
     word_map.emplace("pop_top", word_pop_top);
@@ -226,6 +270,8 @@ int main() {
             words.push_back(word);
         }
         // TODO handle : , ...
+
+        // TODO handle multi line functions
         execute_vector_of_words(&words);
         //std::cin >> line;
     }
