@@ -136,8 +136,35 @@ void execute_word(std::string& word) {
     data.push_back(parsed);
 }
 
-void execute_vector_of_words(std::vector<std::string>& words) {
-    for (auto&& word : words) {
+void execute_vector_of_words(std::vector<std::string>* words);
+
+void create_function(std::string name, std::vector<std::string>* words) {
+    word_map.emplace(name,[words] {
+        execute_vector_of_words(words);
+    });
+
+}
+
+void execute_vector_of_words(std::vector<std::string>* words) {
+    for (int i = 0; i < words->size(); ++i) {
+        auto&& word = words->at(i);
+        if (word == ":") {
+            // Do functions ever need to be deallocated??
+            // falls ja, hier gescheid managen
+            std::vector<std::string>* fun_words = new std::vector<std::string>();
+            i++;
+            word = words->at(i);
+            std::string name = word;
+            i++;
+            word = words->at(i);
+            while (word != ";") {
+                fun_words->push_back(word);
+                i++;
+                word = words->at(i);
+            }
+            create_function(name, fun_words);
+            continue;
+        }
         execute_word(word);
     }
 }
@@ -175,25 +202,21 @@ int main() {
         std::string line;
         std::getline(std::cin, line);
         std::string word;
-        for (int i = 0; i < line.size(); ++i) {
-            auto ind_char = line.at(i);
-            if (ind_char == ' ' ) {
-                if (word == "bye") {
-                    return 0;
-                }
-                execute_word(word);
+        std::vector<std::string> words;
+        for (char ind_char : line) {
+            if (ind_char == ' ') {
+                words.push_back(word);
                 word = "";
             } else {
                 word += ind_char;
             }
         }
-        // falls die eingabe mit \n endet, wird sonst das letze wort nicht ausgeführt.
-        if (line.back() != ' ') {
-            if (word == "bye") {
-                return 0;
-            }
-            execute_word(word);
+        // if the input doesnt end with ' ', but \n, the last word will be ignored otherwise
+        if (line.at(line.size() - 1) != ' ')  {
+            words.push_back(word);
         }
+        // TODO handle : , ...
+        execute_vector_of_words(&words);
         //std::cin >> line;
     }
     return 0;
