@@ -157,6 +157,16 @@ void execute_vector_of_words(std::vector<std::string>* words) {
             std::string name = word;
             i++;
             word = words->at(i);
+            // Kommentare, die die Funktion beschreiben
+            if (word == "(") {
+                while (word != ")") {
+                    i++;
+                    word = words->at(i);
+                }
+            }
+            // das ) überspringen
+            i++;
+            word = words->at(i);
             while (word != ";") {
                 fun_words->push_back(word);
                 i++;
