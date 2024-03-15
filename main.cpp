@@ -57,7 +57,7 @@ void word_mod() {
     data.push_back(result);
 }
 
-// TODO implement the proper behavior with sings, like in word_mod
+// TODO implement the proper behavior with signs, like in word_mod
 void word_div_mod() {
     int first_word = data.back();
     data.pop_back();
@@ -161,12 +161,10 @@ void create_function(std::string name, std::vector<std::string>* words) {
 }
 
 void execute_vector_of_words(std::vector<std::string>* words) {
-    std::cout << "words is : " << std::endl;
-    for (auto ind_word : *words) {
-        std::cout << ind_word << std::endl;
-    }
     for (int i = 0; i < words->size(); ++i) {
         auto&& word = words->at(i);
+        // TODO evtl. ein switch
+        // TODO schleifen mit stacks und springen implementieren. Das ganze suchen ist suboptimal
         if (word == ":") {
             // TODO Do functions ever need to be deallocated??
             // falls ja, hier gescheid managen
@@ -250,8 +248,6 @@ void execute_vector_of_words(std::vector<std::string>* words) {
             }
             // also ist die flag wahr
             // nur falls es ein else gibt muss was gemacht werden
-            // Glaube das ist gelöst, mal prüfen
-            // TODO wenn else gibt, überspringen
             if (found_else) {
                 // wenn das else erreicht wird, wird zu diesem gesprungen
                 // target_i ist 1 vor dem then, also aufs then springen
@@ -259,14 +255,80 @@ void execute_vector_of_words(std::vector<std::string>* words) {
             }
             // das nächste word wird normal ausgeführt
             // wenn das then erreicht wird, wird es übersprungen und danach ist das if vorbei
+            // wenn es ein else gibt, wird wenn es erreicht wird zum then gesprungen
             continue;
         }
         if (word == "then") {
             continue;
         }
+        if (word == "begin") {
+            continue;
+        }
         if (word == "else") {
             i = jump_stack.back();
             jump_stack.pop_back();
+            continue;
+        }
+        if (word == "again" || word == "repeat") {
+            // jumps back to the relevant begin
+            // TODO genestete loops korrekt behandeln
+            // mindestens ein word zurück muss sein ("begin again ")
+            i--;
+            auto find_word = words->at(i);
+            int loop_depth = 0;
+            while (find_word != "begin" || loop_depth != 0) {
+                if (find_word == "again" || find_word == "repeat") {
+                    loop_depth++;
+                }
+                if (find_word == "begin") {
+                    loop_depth--;
+                }
+                i--;
+                find_word = words->at(i);
+            }
+            continue;
+        }
+        if (word == "while") {
+            int flag = data.back();
+            data.pop_back();
+            if (flag == 0) {
+                // also falsch
+                // geht hinter dem passenden repeat weiter
+                // mindestens eins abstand (begin while repeat)
+                i++;
+                auto find_word = words->at(i);
+                int loop_depth = 0;
+                while (find_word != "repeat" || loop_depth != 0) {
+                    if (find_word == "while") {
+                        loop_depth++;
+                    }
+                    if (find_word == "repeat") {
+                        loop_depth--;
+                    }
+                    i++;
+                    find_word = words->at(i);
+                }
+                // i ist jetzt auf dem repeat. Mit der iterations ist es dann dahinter
+            }
+            continue;
+        }
+        if (word == "until") {
+            int flag = data.back();
+            data.pop_back();
+            if (flag != 0) {
+                std::string find_word;
+                int loop_depth = 0;
+                do {
+                    if (find_word == "repeat" || find_word == "again") {
+                        loop_depth++;
+                    }
+                    if (find_word == "begin" ) {
+                        loop_depth--;
+                    }
+                    i--;
+                    find_word = words->at(i);
+                } while (find_word != "begin" || loop_depth != 0);
+            }
             continue;
         }
         execute_word(word);
