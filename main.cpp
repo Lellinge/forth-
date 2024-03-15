@@ -9,6 +9,8 @@ std::vector<int> data;
 std::vector<int> jump_stack;
 
 std::map<std::string, std::function<void(void)>> word_map;
+std::map<std::string, int32_t> variable_map;
+std::vector<void *> index_to_pointer;
 
 void word_add() {
     int first_word = data.back();
@@ -140,10 +142,31 @@ void word_less() {
     }
 }
 
+void word_store() {
+    int index = data.back();
+    data.pop_back();
+    int value = data.back();
+    data.pop_back();
+    int *address = static_cast<int *>(index_to_pointer.at(index));
+    *address = value;
+}
+
+void word_fetch() {
+    int index = data.back();
+    data.pop_back();
+    int *address = static_cast<int *>(index_to_pointer.at(index));
+    data.push_back(*address);
+}
+
 void execute_word(std::string& word) {
     if (word_map.count(word)) {
         auto fun = word_map[word];
         fun();
+        return;
+    }
+    if (variable_map.count(word)) {
+        int index = variable_map[word];
+        data.push_back(index);
         return;
     }
     // TODO error handling, if its not a valid int
@@ -331,6 +354,19 @@ void execute_vector_of_words(std::vector<std::string>* words) {
             }
             continue;
         }
+        if (word == "variable") {
+            std::string name = words->at(i + 1);
+            // größe 3 -> 0 1 2
+            // also gibt das immer den nächsten index
+            // wenn der vector mehr als 32bit braucht, ist das wie mehr als 32bit pointer brauchen
+            // es emuliert 32bit pointer, also hat es dieselben probleme
+            int index = (int) index_to_pointer.size();
+            variable_map.emplace(name, index);
+            index_to_pointer.push_back(malloc(8));
+            // den namen der variable überspringen
+            i++;
+            continue;
+        }
         execute_word(word);
     }
 }
@@ -357,6 +393,10 @@ int main() {
 
     // related to if
     word_map.emplace("<", word_less);
+
+    // variablen/speicher
+    word_map.emplace("!", word_store);
+    word_map.emplace("@", word_fetch);
 
     word_map.emplace("print_top", word_print_top);
     word_map.emplace("pop_top", word_pop_top);
