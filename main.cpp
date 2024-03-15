@@ -6,7 +6,7 @@
 
 std::vector<int> data;
 
-std::vector<int> ret_addr_stack;
+std::vector<int> jump_stack;
 
 std::map<std::string, std::function<void(void)>> word_map;
 
@@ -161,6 +161,10 @@ void create_function(std::string name, std::vector<std::string>* words) {
 }
 
 void execute_vector_of_words(std::vector<std::string>* words) {
+    std::cout << "words is : " << std::endl;
+    for (auto ind_word : *words) {
+        std::cout << ind_word << std::endl;
+    }
     for (int i = 0; i < words->size(); ++i) {
         auto&& word = words->at(i);
         if (word == ":") {
@@ -173,14 +177,18 @@ void execute_vector_of_words(std::vector<std::string>* words) {
             i++;
             word = words->at(i);
             // Kommentare, die die Funktion beschreiben
+            bool has_opening_parens = false;
             if (word == "(") {
+                has_opening_parens = true;
                 while (word != ")") {
                     i++;
                     word = words->at(i);
                 }
             }
             // das ) überspringen
-            i++;
+            if (has_opening_parens) {
+                i++;
+            }
             word = words->at(i);
             while (word != ";") {
                 fun_words->push_back(word);
@@ -193,27 +201,72 @@ void execute_vector_of_words(std::vector<std::string>* words) {
         if (word == "if") {
             // TODO if else, nicht nur if
 
+            // TODO rekursives if
+            // allgemein, rekursives if kann der code nicht
+
+            // gibt es ein else for dem then ?
+            bool found_else = false;
+            int target_i = i;
+            int else_i = -1;
+            // offensichtlich ist das if, was wir gerade bearbeiten, nicht das then und auch nicht das else
+            target_i++;
+            auto target_word = words->at(target_i);
+
+            // um bei z.B. diesem code "if < if 1 then else > if 2 then then" das passende then/else zu finden
+            int if_depth = 0;
+            while (target_word != "then" || if_depth != 0) {
+                if (target_word == "if") {
+                    if_depth++;
+                }
+                if (target_word == "then") {
+                    if_depth--;
+                }
+                // keine else von genesteten ifs finden
+                if (target_word == "else" && if_depth == 0) {
+                    found_else = true;
+                    else_i = target_i;
+                }
+                target_i++;
+                target_word = words->at(target_i);
+            }
+            target_i--;
+            int pos_before_then = target_i;
 
             int flag = data.back();
             data.pop_back();
             // if the branch isnt taken, set i to the word before the then
             // the iteration will increment to then, which gets ingored and the execution proceeds normally afterwards
             if (flag == 0) {
-                int target_i = i;
-                auto&& target_word = word;
-                while (target_word != "then") {
-                    target_i++;
-                    target_word = words->at(target_i);
+                if (!found_else) {
+                    i = pos_before_then;
+                    continue;
                 }
-                target_i--;
-                i = target_i;
+                // Not sure this is still true
+                // next iteration increments i to the first word after then
+
+                // the iteration will set i to the word after the else.
+                i = else_i;
                 continue;
+            }
+            // also ist die flag wahr
+            // nur falls es ein else gibt muss was gemacht werden
+            // Glaube das ist gelöst, mal prüfen
+            // TODO wenn else gibt, überspringen
+            if (found_else) {
+                // wenn das else erreicht wird, wird zu diesem gesprungen
+                // target_i ist 1 vor dem then, also aufs then springen
+                jump_stack.push_back(target_i + 1);
             }
             // das nächste word wird normal ausgeführt
             // wenn das then erreicht wird, wird es übersprungen und danach ist das if vorbei
             continue;
         }
         if (word == "then") {
+            continue;
+        }
+        if (word == "else") {
+            i = jump_stack.back();
+            jump_stack.pop_back();
             continue;
         }
         execute_word(word);
