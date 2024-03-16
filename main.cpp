@@ -12,6 +12,10 @@ std::map<std::string, std::function<void(void)>> word_map;
 std::map<std::string, int32_t> variable_map;
 std::vector<void *> index_to_pointer;
 
+void *conv_index_pointer(int index) {
+    return index_to_pointer.at(index);
+}
+
 void word_add() {
     int first_word = data.back();
     data.pop_back();
@@ -147,14 +151,14 @@ void word_store() {
     data.pop_back();
     int value = data.back();
     data.pop_back();
-    int *address = static_cast<int *>(index_to_pointer.at(index));
+    int* address = static_cast<int *>(conv_index_pointer(index));
     *address = value;
 }
 
 void word_fetch() {
     int index = data.back();
     data.pop_back();
-    int *address = static_cast<int *>(index_to_pointer.at(index));
+    int* address = static_cast<int *>(conv_index_pointer(index));
     data.push_back(*address);
 }
 
@@ -168,6 +172,9 @@ void execute_word(std::string& word) {
         int index = variable_map[word];
         data.push_back(index);
         return;
+    }
+    if (word == "bye") {
+        std::exit(0);
     }
     // TODO error handling, if its not a valid int
     int parsed = std::stoi(word);
@@ -406,7 +413,6 @@ int main() {
 
     word_map.emplace("testing", [] { std::cout << "hello world" << std::endl; });
 
-    std::cout << "welcome to simpelforth: " << std::endl;
     while (true) {
         std::string line;
         std::getline(std::cin, line);
