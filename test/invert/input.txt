@@ -1,0 +1,3 @@
+0 invert .
+-1 invert .
+bye

@@ -81,6 +81,21 @@ void word_negate() {
     data.push_back(-1 * first_word);
 }
 
+void word_invert() {
+    int first_word = data.back();
+    data.pop_back();
+    data.push_back(~first_word);
+}
+
+void word_and() {
+    int first_word = data.back();
+    data.pop_back();
+    int second_word = data.back();
+    data.pop_back();
+    int result = first_word & second_word;
+    data.push_back(result);
+}
+
 void word_print_top() {
     std::cout << data.back() << std::endl;
 }
@@ -133,6 +148,24 @@ void word_rot() {
     data.at(data.size() - 3) = second_word;
 }
 
+void word_max() {
+    int second_word = data.back();
+    data.pop_back();
+    int first_word = data.back();
+    data.pop_back();
+    int result = second_word > first_word ? second_word : first_word;
+    data.push_back(result);
+}
+
+void word_min() {
+    int second_word = data.back();
+    data.pop_back();
+    int first_word = data.back();
+    data.pop_back();
+    int result = second_word < first_word ? second_word : first_word;
+    data.push_back(result);
+}
+
 void word_less() {
     int second_word = data.back();
     data.pop_back();
@@ -161,6 +194,7 @@ void word_fetch() {
     int* address = static_cast<int *>(conv_index_pointer(index));
     data.push_back(*address);
 }
+
 
 void execute_word(std::string& word) {
     if (word_map.count(word)) {
@@ -389,6 +423,8 @@ int main() {
     word_map.emplace("mod", word_mod);
     word_map.emplace("/mod", word_div_mod);
     word_map.emplace("negate", word_negate);
+    word_map.emplace("invert", word_invert);
+    word_map.emplace("and", word_and);
 
     // stack manipulation
     word_map.emplace("drop", word_drop);
@@ -397,6 +433,8 @@ int main() {
     word_map.emplace("over", word_over);
     word_map.emplace("swap", word_swap);
     word_map.emplace("rot", word_rot);
+    word_map.emplace("max", word_max);
+    word_map.emplace("min", word_min);
 
     // related to if
     word_map.emplace("<", word_less);

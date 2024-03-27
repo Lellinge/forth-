@@ -3,6 +3,14 @@ import os
 import subprocess
 import sys
 
+CODE_END = '\033[0m'
+CODE_BLUE = '\033[94m'
+CODE_YELLOW = '\033[93m'
+CODE_GREEN = '\033[92m'
+CODE_RED = '\033[91m'
+
+def color_str(str, color):
+    return color + str + CODE_END
 
 def main():
     success = True
@@ -21,18 +29,23 @@ def main():
 
         # das zu testende programm ausführen
         result = subprocess.run([bin_path], stdout=output_file, stdin=input_file)
-        print("directory: " + file + ": input was executed with return code: "  + str(result.returncode))
+        ret_code_str = ""
+        if result.returncode == 0:
+            ret_code_str = color_str(str(result.returncode), CODE_GREEN)
+        else:
+            ret_code_str = color_str(str(result.returncode), CODE_RED)
+        print(CODE_BLUE + "directory: " + CODE_END + CODE_YELLOW +  file  + CODE_END + ": input was executed with return code: "  + ret_code_str)
 
         # ausgabe mit der erwarteten vergleichen
         result_cmp = subprocess.run(["cmp", output_path, expected_path])
         final_message = ""
         if (result_cmp.returncode == 0):
-            final_message = "was successfull"
+            final_message = "was " + color_str("successfull", CODE_GREEN)
         else:
-            final_message = "failed: Expected output doesnt match real output"
+            final_message = color_str("failed:", CODE_RED) +  "Expected output doesnt match real output"
             success = False
 
-        print("directory: " + file + ": " + final_message)
+        print(CODE_BLUE + "directory: " + CODE_END + CODE_YELLOW + file + CODE_END + ": " + final_message)
 
     if (success):
         return 0
