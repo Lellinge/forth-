@@ -340,47 +340,72 @@ u_int8_t *compile_fun(std::string name, std::vector<std::string>* words) {
 }
 
 void execute_bytecode(u_int8_t* buf) {
-    int buf_index = 0;
-    while (buf[buf_index] != OP_RETURN || !return_stack.empty()) {
-        int temp = buf[buf_index];
-        switch (buf[buf_index]) {
+    u_int8_t* pc = buf;
+    while (*pc != OP_RETURN || !return_stack.empty()) {
+        int temp = *pc;
+        switch (*pc) {
             case OP_NUMBER:
                 int number;
                 // packt die vier bytes aus dem buf wieder in einen int.
                 // Wahrscheinlich könnte man das auch in einer Zeile machen, aber es wird vermutlich eh zu einem read optimiert.
-                ((u_int8_t *)&number)[0] = buf[buf_index + 1];
-                ((u_int8_t *)&number)[1] = buf[buf_index + 2];
-                ((u_int8_t *)&number)[2] = buf[buf_index + 3];
-                ((u_int8_t *)&number)[3] = buf[buf_index + 4];
+                ((u_int8_t *)&number)[0] = *(pc + 1);
+                ((u_int8_t *)&number)[1] = *(pc + 2);
+                ((u_int8_t *)&number)[2] = *(pc + 3);
+                ((u_int8_t *)&number)[3] = *(pc + 4);
                 data.push_back(number);
                 // die 4bytes nach op_add mit der nummer überspringen
-                buf_index += 4;
+                pc = pc + 4;
                 break;
             case OP_ADD:
                 word_add();
                 break;
             case OP_RETURN:
-                return;
+                if (return_stack.empty()) {
+                    return;
+                }
+                // die rücksprungadresse vom stack laden
+                pc = return_stack.back();
+                // die addresse zu der gesprungen wird wurde jetzt genutzt, also entfernen
+                return_stack.pop_back();
+                break;
             case OP_CALL_NATIVE:
                 std::function<void()> *fun;
                 // entpacken des pointers aus dem bytecode
                 // wird vermutlich in einen load optimiert.
-                ((u_int8_t *)&fun)[0] = buf[buf_index + 1];
-                ((u_int8_t *)&fun)[1] = buf[buf_index + 2];
-                ((u_int8_t *)&fun)[2] = buf[buf_index + 3];
-                ((u_int8_t *)&fun)[3] = buf[buf_index + 4];
-                ((u_int8_t *)&fun)[4] = buf[buf_index + 5];
-                ((u_int8_t *)&fun)[5] = buf[buf_index + 6];
-                ((u_int8_t *)&fun)[6] = buf[buf_index + 7];
-                ((u_int8_t *)&fun)[7] = buf[buf_index + 8];
+                ((u_int8_t *)&fun)[0] = *(pc + 1);
+                ((u_int8_t *)&fun)[1] = *(pc + 2);
+                ((u_int8_t *)&fun)[2] = *(pc + 3);
+                ((u_int8_t *)&fun)[3] = *(pc + 4);
+                ((u_int8_t *)&fun)[4] = *(pc + 5);
+                ((u_int8_t *)&fun)[5] = *(pc + 6);
+                ((u_int8_t *)&fun)[6] = *(pc + 7);
+                ((u_int8_t *)&fun)[7] = *(pc + 8);
                 (*fun)();
-                buf_index += 8;
+                pc = pc + 8;
+                break;
+            case OP_CALL:
+                u_int8_t *ptr;
+                // entpacken des pointers aus dem bytecode
+                // wird vermutlich in einen load optimiert.
+                ((u_int8_t *)&ptr)[0] = *(pc + 1);
+                ((u_int8_t *)&ptr)[1] = *(pc + 2);
+                ((u_int8_t *)&ptr)[2] = *(pc + 3);
+                ((u_int8_t *)&ptr)[3] = *(pc + 4);
+                ((u_int8_t *)&ptr)[4] = *(pc + 5);
+                ((u_int8_t *)&ptr)[5] = *(pc + 6);
+                ((u_int8_t *)&ptr)[6] = *(pc + 7);
+                ((u_int8_t *)&ptr)[7] = *(pc + 8);
+
+                // TODO jump to bytecode
+                pc = pc + 8;
+                return_stack.push_back(pc);
+                pc = ptr;
                 break;
             default:
-                std::cout << "unhandled bytecode" << (int) buf[buf_index] << std::endl;
+                std::cout << "unhandled bytecode" << (int) *pc << std::endl;
                 return;
         }
-        buf_index++;
+        pc++;
     }
 }
 void compile_function(std::string name, std::vector<std::string>* words) {
