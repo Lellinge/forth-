@@ -7,8 +7,10 @@
 std::vector<int> data;
 
 std::vector<int> jump_stack;
+std::vector<u_int8_t *> return_stack;
 
 std::map<std::string, std::function<void(void)>> word_map;
+std::map<std::string, u_int8_t *> compiled_word_map;
 std::map<std::string, int32_t> variable_map;
 std::vector<void *> index_to_pointer;
 
@@ -224,12 +226,180 @@ void create_function(std::string name, std::vector<std::string>* words) {
 
 }
 
+enum opcodes : u_int8_t {
+    OP_RETURN = 0,
+    OP_CALL = 1,
+    OP_ADD = 2,
+    OP_SUB = 3,
+    OP_NUMBER = 4,
+    OP_CALL_NATIVE = 5,
+    // TODO die weiteren ops
+};
+
+// Implementiert einen bytecode interpreter
+// Aktuell sehr unvollständig
+u_int8_t *compile_fun(std::string name, std::vector<std::string>* words) {
+    int number_words_required = 0;
+    number_words_required += 1; // OP_RETURN am ende
+    number_words_required += words->size(); // jedes word oder zahl hat einen opcode
+    // extra platz für die tatsächlichen Zahlen
+    for (auto&& word : *words) {
+        for (auto&& ind_char : word) {
+            if (!isdigit(ind_char)) {
+                // das nächste word muss geprüft werden, ob es eine Zahl ist. Dieses ist es schonmal nicht.
+                goto next_word_iteration;
+            }
+        }
+        // ein int_32 für die zahl
+        number_words_required += 4;
+        next_word_iteration:;
+    }
+    // werden worte aufgerufen?
+    // nativer code (C++) und bytecode Aufrufe brauchen beide 1 OP + 8bytes pointer
+    for (auto&& word : *words) {
+        // native funktionen
+        if (word_map.contains(word)) {
+            number_words_required += 8;
+            continue;
+        }
+        // bytecode
+        if (compiled_word_map.contains(word)) {
+            number_words_required += 8;
+        }
+    }
+    u_int8_t *buf = static_cast<u_int8_t *>(malloc(number_words_required));
+    // letzte befehl muss ein return sein
+    buf[number_words_required - 1] = OP_RETURN;
+    int index_buf = 0;
+    for (int i = 0; i < words->size(); ++i) {
+        // C++ funktionen aufrufen
+        if (word_map.contains(words->at(i))) {
+            buf[index_buf] = OP_CALL_NATIVE;
+            index_buf++;
+
+            std::function<void()>* ptr = &word_map.at(words->at(i));
+            // converts the pointer into an array of bytes
+            u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
+            buf[index_buf + 0] = ptr_as_bytes[0];
+            buf[index_buf + 1] = ptr_as_bytes[1];
+            buf[index_buf + 2] = ptr_as_bytes[2];
+            buf[index_buf + 3] = ptr_as_bytes[3];
+            buf[index_buf + 4] = ptr_as_bytes[4];
+            buf[index_buf + 5] = ptr_as_bytes[5];
+            buf[index_buf + 6] = ptr_as_bytes[6];
+            buf[index_buf + 7] = ptr_as_bytes[7];
+            index_buf += 8;
+            continue;
+        }
+        // bytecode call
+        if (compiled_word_map.contains(words->at(i))) {
+            buf[index_buf] = OP_CALL;
+            index_buf++;
+            u_int8_t *ptr = compiled_word_map.at(words->at(i));
+            // converts the pointer into a array of bytes
+            u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
+            buf[index_buf + 0] = ptr_as_bytes[0];
+            buf[index_buf + 1] = ptr_as_bytes[1];
+            buf[index_buf + 2] = ptr_as_bytes[2];
+            buf[index_buf + 3] = ptr_as_bytes[3];
+            buf[index_buf + 4] = ptr_as_bytes[4];
+            buf[index_buf + 5] = ptr_as_bytes[5];
+            buf[index_buf + 6] = ptr_as_bytes[6];
+            buf[index_buf + 7] = ptr_as_bytes[7];
+            index_buf += 8;
+            continue;
+        }
+        bool is_number = true;
+        for (int j = 0; j < words->at(i).size(); ++j) {
+            if (!isdigit(words->at(i).at(j))) {
+                is_number = false;
+                break;
+            }
+        }
+        if (is_number) {
+            buf[index_buf] = OP_NUMBER;
+            index_buf++;
+            int int_word = std::atoi(words->at(i).c_str());
+            u_int8_t* int_arr = static_cast<u_int8_t *>(static_cast<void*>(&int_word));
+            buf[index_buf] = int_arr[0];
+            buf[index_buf + 1] = int_arr[1];
+            buf[index_buf + 2] = int_arr[2];
+            buf[index_buf + 3] = int_arr[3];
+            index_buf += 4;
+            continue;
+        }
+        if (words->at(i) == "+") {
+            buf[index_buf] = OP_ADD;
+        }
+        if (words->at(i) == "-") {
+            buf[index_buf] = OP_SUB;
+        }
+        index_buf++;
+    }
+    return buf;
+}
+
+void execute_bytecode(u_int8_t* buf) {
+    int buf_index = 0;
+    while (buf[buf_index] != OP_RETURN || !return_stack.empty()) {
+        int temp = buf[buf_index];
+        switch (buf[buf_index]) {
+            case OP_NUMBER:
+                int number;
+                // packt die vier bytes aus dem buf wieder in einen int.
+                // Wahrscheinlich könnte man das auch in einer Zeile machen, aber es wird vermutlich eh zu einem read optimiert.
+                ((u_int8_t *)&number)[0] = buf[buf_index + 1];
+                ((u_int8_t *)&number)[1] = buf[buf_index + 2];
+                ((u_int8_t *)&number)[2] = buf[buf_index + 3];
+                ((u_int8_t *)&number)[3] = buf[buf_index + 4];
+                data.push_back(number);
+                // die 4bytes nach op_add mit der nummer überspringen
+                buf_index += 4;
+                break;
+            case OP_ADD:
+                word_add();
+                break;
+            case OP_RETURN:
+                return;
+            case OP_CALL_NATIVE:
+                std::function<void()> *fun;
+                // entpacken des pointers aus dem bytecode
+                // wird vermutlich in einen load optimiert.
+                ((u_int8_t *)&fun)[0] = buf[buf_index + 1];
+                ((u_int8_t *)&fun)[1] = buf[buf_index + 2];
+                ((u_int8_t *)&fun)[2] = buf[buf_index + 3];
+                ((u_int8_t *)&fun)[3] = buf[buf_index + 4];
+                ((u_int8_t *)&fun)[4] = buf[buf_index + 5];
+                ((u_int8_t *)&fun)[5] = buf[buf_index + 6];
+                ((u_int8_t *)&fun)[6] = buf[buf_index + 7];
+                ((u_int8_t *)&fun)[7] = buf[buf_index + 8];
+                (*fun)();
+                buf_index += 8;
+                break;
+            default:
+                std::cout << "unhandled bytecode" << (int) buf[buf_index] << std::endl;
+                return;
+        }
+        buf_index++;
+    }
+}
+void compile_function(std::string name, std::vector<std::string>* words) {
+    std::cout << "name in compile_function is: " << name << std::endl;
+    u_int8_t* buf = compile_fun(name, words);
+    word_map.emplace(name,[buf] {
+        execute_bytecode(buf);
+    });
+}
+
+
 void execute_vector_of_words(std::vector<std::string>* words) {
     for (int i = 0; i < words->size(); ++i) {
         auto&& word = words->at(i);
         // TODO evtl. ein switch
         // TODO schleifen mit stacks und springen implementieren. Das ganze suchen ist suboptimal
-        if (word == ":") {
+        if (word == ":" || word == ":comp") {
+            std::cout << "word is: " << word << std::endl;
+            auto prev_word = word;
             // TODO Do functions ever need to be deallocated??
             // falls ja, hier gescheid managen
             std::vector<std::string>* fun_words = new std::vector<std::string>();
@@ -257,7 +427,12 @@ void execute_vector_of_words(std::vector<std::string>* words) {
                 i++;
                 word = words->at(i);
             }
-            create_function(name, fun_words);
+            if (prev_word == ":comp") {
+                std::cout << "is :comp" << std::endl;
+                compile_function(name, fun_words);
+            } else {
+                create_function(name, fun_words);
+            }
             continue;
         }
         if (word == "if") {
