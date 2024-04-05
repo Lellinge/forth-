@@ -2,6 +2,8 @@
 #include <stack>
 #include <functional>
 #include <map>
+#include <cstring>
+#include <chrono>
 
 
 std::vector<int> data;
@@ -233,12 +235,16 @@ enum opcodes : u_int8_t {
     OP_SUB = 3,
     OP_NUMBER = 4,
     OP_CALL_NATIVE = 5,
+    OP_COND_JUMP = 6,
+    OP_BOOLEAN_NEGATE = 7,
     // TODO die weiteren ops
 };
+
 
 // Implementiert einen bytecode interpreter
 // Aktuell sehr unvollständig
 u_int8_t *compile_fun(std::string name, std::vector<std::string>* words) {
+    auto t1 = std::chrono::high_resolution_clock::now();
     int number_words_required = 0;
     number_words_required += 1; // OP_RETURN am ende
     number_words_required += words->size(); // jedes word oder zahl hat einen opcode
@@ -267,47 +273,90 @@ u_int8_t *compile_fun(std::string name, std::vector<std::string>* words) {
             number_words_required += 8;
         }
     }
-    u_int8_t *buf = static_cast<u_int8_t *>(malloc(number_words_required));
+    std::vector<u_int8_t>* buf_vec = new std::vector<u_int8_t>();
     // letzte befehl muss ein return sein
-    buf[number_words_required - 1] = OP_RETURN;
     int index_buf = 0;
     for (int i = 0; i < words->size(); ++i) {
         // C++ funktionen aufrufen
         if (word_map.contains(words->at(i))) {
-            buf[index_buf] = OP_CALL_NATIVE;
+            buf_vec->push_back(OP_CALL_NATIVE);
             index_buf++;
 
             std::function<void()>* ptr = &word_map.at(words->at(i));
             // converts the pointer into an array of bytes
             u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
-            buf[index_buf + 0] = ptr_as_bytes[0];
-            buf[index_buf + 1] = ptr_as_bytes[1];
-            buf[index_buf + 2] = ptr_as_bytes[2];
-            buf[index_buf + 3] = ptr_as_bytes[3];
-            buf[index_buf + 4] = ptr_as_bytes[4];
-            buf[index_buf + 5] = ptr_as_bytes[5];
-            buf[index_buf + 6] = ptr_as_bytes[6];
-            buf[index_buf + 7] = ptr_as_bytes[7];
+            buf_vec->push_back(ptr_as_bytes[0]);
+            buf_vec->push_back(ptr_as_bytes[1]);
+            buf_vec->push_back(ptr_as_bytes[2]);
+            buf_vec->push_back(ptr_as_bytes[3]);
+            buf_vec->push_back(ptr_as_bytes[4]);
+            buf_vec->push_back(ptr_as_bytes[5]);
+            buf_vec->push_back(ptr_as_bytes[6]);
+            buf_vec->push_back(ptr_as_bytes[7]);
             index_buf += 8;
             continue;
         }
         // bytecode call
         if (compiled_word_map.contains(words->at(i))) {
-            buf[index_buf] = OP_CALL;
+            buf_vec->push_back(OP_CALL);
             index_buf++;
             u_int8_t *ptr = compiled_word_map.at(words->at(i));
             // converts the pointer into a array of bytes
             u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
-            buf[index_buf + 0] = ptr_as_bytes[0];
-            buf[index_buf + 1] = ptr_as_bytes[1];
-            buf[index_buf + 2] = ptr_as_bytes[2];
-            buf[index_buf + 3] = ptr_as_bytes[3];
-            buf[index_buf + 4] = ptr_as_bytes[4];
-            buf[index_buf + 5] = ptr_as_bytes[5];
-            buf[index_buf + 6] = ptr_as_bytes[6];
-            buf[index_buf + 7] = ptr_as_bytes[7];
+            buf_vec->push_back(ptr_as_bytes[0]);
+            buf_vec->push_back(ptr_as_bytes[1]);
+            buf_vec->push_back(ptr_as_bytes[2]);
+            buf_vec->push_back(ptr_as_bytes[3]);
+            buf_vec->push_back(ptr_as_bytes[4]);
+            buf_vec->push_back(ptr_as_bytes[5]);
+            buf_vec->push_back(ptr_as_bytes[6]);
+            buf_vec->push_back(ptr_as_bytes[7]);
             index_buf += 8;
             continue;
+        }
+        if (words->at(i) == "if") {
+            // if springt, wenn oberste wahr, OP_COND_NEGATE auch.
+            // aber hier wird bei oberste falsch etwas übersprungen, also muss das oberste negiert werden
+            buf_vec->push_back(OP_BOOLEAN_NEGATE);
+            buf_vec->push_back(OP_COND_JUMP);
+            // TODO evtl nur relative sprünge? wäre aufjeden fall kleiner
+            // aber ist der overhead es wert?
+            // oder variabel, relativ oder absolut??
+
+            // reserviert platz für einen pointer also 8 bytes
+            for (int j = 0; j < 8; ++j) {
+                buf_vec->push_back(0);
+            }
+            // der rest wird vom then gemacht.
+        }
+        if (words->at(i) == "then") {
+            // jetzt muss der pointer des ifs gesetzt werden
+            auto ptr = &buf_vec->back();
+            auto temp = ptr;
+            // findet das letzte if ohne gesetzten pointer (notwendig wegen 'if if 5 then then' -ähnlichem code)
+            while (true) {
+                if (*temp == OP_COND_JUMP && *(temp + 1) == 0 &&
+                    *(temp + 2) == 0 &&
+                    *(temp + 3) == 0 &&
+                    *(temp + 4) == 0 &&
+                    *(temp + 5) == 0 &&
+                    *(temp + 6) == 0 &&
+                    *(temp + 7) == 0 &&
+                    *(temp + 7) == 0) {
+                    // hier ist das zugehörige if
+                    u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
+                    *(temp + 1) = ptr_as_bytes[0];
+                    *(temp + 2) = ptr_as_bytes[1];
+                    *(temp + 3) = ptr_as_bytes[2];
+                    *(temp + 4) = ptr_as_bytes[3];
+                    *(temp + 5) = ptr_as_bytes[4];
+                    *(temp + 6) = ptr_as_bytes[5];
+                    *(temp + 7) = ptr_as_bytes[6];
+                    *(temp + 8) = ptr_as_bytes[7];
+                    break;
+                }
+                temp--;
+            }
         }
         bool is_number = true;
         for (int j = 0; j < words->at(i).size(); ++j) {
@@ -317,26 +366,30 @@ u_int8_t *compile_fun(std::string name, std::vector<std::string>* words) {
             }
         }
         if (is_number) {
-            buf[index_buf] = OP_NUMBER;
+            buf_vec->push_back(OP_NUMBER);
             index_buf++;
             int int_word = std::atoi(words->at(i).c_str());
             u_int8_t* int_arr = static_cast<u_int8_t *>(static_cast<void*>(&int_word));
-            buf[index_buf] = int_arr[0];
-            buf[index_buf + 1] = int_arr[1];
-            buf[index_buf + 2] = int_arr[2];
-            buf[index_buf + 3] = int_arr[3];
+            buf_vec->push_back(int_arr[0]);
+            buf_vec->push_back(int_arr[1]);
+            buf_vec->push_back(int_arr[2]);
+            buf_vec->push_back(int_arr[3]);
             index_buf += 4;
             continue;
         }
         if (words->at(i) == "+") {
-            buf[index_buf] = OP_ADD;
+            buf_vec->push_back(OP_ADD);
         }
         if (words->at(i) == "-") {
-            buf[index_buf] = OP_SUB;
+            buf_vec->push_back(OP_SUB);
         }
         index_buf++;
     }
-    return buf;
+    buf_vec->push_back(OP_RETURN);
+    auto t2 = std::chrono::high_resolution_clock::now();
+    auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
+    std::cout << "compiling this function took " << ms_int.count() << "ms" << std::endl;
+    return buf_vec->data();
 }
 
 void execute_bytecode(u_int8_t* buf) {
@@ -400,6 +453,30 @@ void execute_bytecode(u_int8_t* buf) {
                 pc = pc + 8;
                 return_stack.push_back(pc);
                 pc = ptr;
+                break;
+            case OP_COND_JUMP:
+                if (data.back() == 0) {
+                    // setzt den pc zum wert im bytecode
+                    // pc + 1 => der pointer beginnt hinter dem OP_COND_JUMP
+                    // (u_int8_t **) pc ist ein pointer, und wir wollen die ganzen 8bytes laden, nicht nur einen
+                    // * lädt die adresse im bytecode, nicht die adresse der adresse
+                    auto temp_pc_1 = pc + 1;
+                    auto temp_pc_2 = (u_int8_t**) temp_pc_1;
+                    pc = *temp_pc_2;
+                } else {
+                    // skipt den pointer
+                    pc += 8;
+                }
+                data.pop_back();
+                break;
+            case OP_BOOLEAN_NEGATE:
+                if (data.back() == 0) {
+                    data.pop_back();
+                    data.push_back(-1);
+                } else {
+                    data.pop_back();
+                    data.push_back(0);
+                }
                 break;
             default:
                 std::cout << "unhandled bytecode" << (int) *pc << std::endl;
