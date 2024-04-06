@@ -360,14 +360,16 @@ std::vector<u_int8_t> *compile_block(std::vector<std::string> *words) {
 }
 
 // Implementiert einen bytecode interpreter
-// Aktuell sehr unvollständig
+// aktuell sehr unvollständig
 u_int8_t *compile_fun(std::string name, std::vector<std::string>* words) {
     auto t1 = std::chrono::high_resolution_clock::now();
     std::vector<u_int8_t> *buf_vec = compile_block(words);
+    // der return am Ende, denn es ist eine Funktion
+    // compile block ist auch für z.b. ifs da
     buf_vec->push_back(OP_RETURN);
     auto t2 = std::chrono::high_resolution_clock::now();
-    auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
-    std::cout << "compiling this function took " << ms_int.count() << "ms" << std::endl;
+    auto ms_int = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
+    std::cout << "compiling this function took " << ms_int.count() << "us" << std::endl;
     return buf_vec->data();
 }
 
@@ -465,7 +467,6 @@ void execute_bytecode(u_int8_t* buf) {
     }
 }
 void compile_function(std::string name, std::vector<std::string>* words) {
-    std::cout << "name in compile_function is: " << name << std::endl;
     u_int8_t* buf = compile_fun(name, words);
     word_map.emplace(name,[buf] {
         execute_bytecode(buf);
@@ -479,7 +480,6 @@ void execute_vector_of_words(std::vector<std::string>* words) {
         // TODO evtl. ein switch
         // TODO schleifen mit stacks und springen implementieren. Das ganze suchen ist suboptimal
         if (word == ":" || word == ":comp") {
-            std::cout << "word is: " << word << std::endl;
             auto prev_word = word;
             // TODO Do functions ever need to be deallocated??
             // falls ja, hier gescheid managen
@@ -509,7 +509,6 @@ void execute_vector_of_words(std::vector<std::string>* words) {
                 word = words->at(i);
             }
             if (prev_word == ":comp") {
-                std::cout << "is :comp" << std::endl;
                 compile_function(name, fun_words);
             } else {
                 create_function(name, fun_words);
