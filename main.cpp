@@ -240,151 +240,130 @@ enum opcodes : u_int8_t {
     // TODO die weiteren ops
 };
 
+void compile_word(std::string word, std::vector<u_int8_t>& buf_vec) {
+    // C++ funktionen aufrufen
+    if (word_map.contains(word)) {
+        buf_vec.push_back(OP_CALL_NATIVE);
+
+        std::function<void()>* ptr = &word_map.at(word);
+        // converts the pointer into an array of bytes
+        u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
+        buf_vec.push_back(ptr_as_bytes[0]);
+        buf_vec.push_back(ptr_as_bytes[1]);
+        buf_vec.push_back(ptr_as_bytes[2]);
+        buf_vec.push_back(ptr_as_bytes[3]);
+        buf_vec.push_back(ptr_as_bytes[4]);
+        buf_vec.push_back(ptr_as_bytes[5]);
+        buf_vec.push_back(ptr_as_bytes[6]);
+        buf_vec.push_back(ptr_as_bytes[7]);
+        return;
+    }
+    // bytecode call
+    if (compiled_word_map.contains(word)) {
+        buf_vec.push_back(OP_CALL);
+        u_int8_t *ptr = compiled_word_map.at(word);
+        // converts the pointer into a array of bytes
+        u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
+        buf_vec.push_back(ptr_as_bytes[0]);
+        buf_vec.push_back(ptr_as_bytes[1]);
+        buf_vec.push_back(ptr_as_bytes[2]);
+        buf_vec.push_back(ptr_as_bytes[3]);
+        buf_vec.push_back(ptr_as_bytes[4]);
+        buf_vec.push_back(ptr_as_bytes[5]);
+        buf_vec.push_back(ptr_as_bytes[6]);
+        buf_vec.push_back(ptr_as_bytes[7]);
+        return;
+    }
+    if (word == "if") {
+        // if springt, wenn oberste wahr, OP_COND_NEGATE auch.
+        // aber hier wird bei oberste falsch etwas übersprungen, also muss das oberste negiert werden
+        buf_vec.push_back(OP_BOOLEAN_NEGATE);
+        buf_vec.push_back(OP_COND_JUMP);
+        // TODO evtl nur relative sprünge? wäre aufjeden fall kleiner
+        // aber ist der cpu overhead es wert?
+        // oder variabel, relativ oder absolut??
+
+        // reserviert platz für einen pointer also 8 bytes
+        for (int j = 0; j < 8; ++j) {
+            buf_vec.push_back(0);
+        }
+        // der rest wird vom then gemacht.
+    }
+
+    if (word == "then") {
+        // jetzt muss der pointer des ifs gesetzt werden
+        auto ptr = &buf_vec.back();
+        auto temp = ptr;
+        // findet das letzte if ohne gesetzten pointer (notwendig wegen 'if if 5 then then' -ähnlichem code)
+        while (true) {
+            if (*temp == OP_COND_JUMP && *(temp + 1) == 0 &&
+                *(temp + 2) == 0 &&
+                *(temp + 3) == 0 &&
+                *(temp + 4) == 0 &&
+                *(temp + 5) == 0 &&
+                *(temp + 6) == 0 &&
+                *(temp + 7) == 0 &&
+                *(temp + 7) == 0) {
+                // hier ist das zugehörige if
+                u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
+                *(temp + 1) = ptr_as_bytes[0];
+                *(temp + 2) = ptr_as_bytes[1];
+                *(temp + 3) = ptr_as_bytes[2];
+                *(temp + 4) = ptr_as_bytes[3];
+                *(temp + 5) = ptr_as_bytes[4];
+                *(temp + 6) = ptr_as_bytes[5];
+                *(temp + 7) = ptr_as_bytes[6];
+                *(temp + 8) = ptr_as_bytes[7];
+                break;
+            }
+            temp--;
+        }
+    }
+
+    bool is_number = true;
+    for (int j = 0; j < word.size(); ++j) {
+        if (!isdigit(word.at(j))) {
+            is_number = false;
+            break;
+        }
+    }
+    if (is_number) {
+        buf_vec.push_back(OP_NUMBER);
+        int int_word = std::atoi(word.c_str());
+        u_int8_t* int_arr = static_cast<u_int8_t *>(static_cast<void*>(&int_word));
+        buf_vec.push_back(int_arr[0]);
+        buf_vec.push_back(int_arr[1]);
+        buf_vec.push_back(int_arr[2]);
+        buf_vec.push_back(int_arr[3]);
+        return;
+    }
+
+    if (word == "+") {
+        buf_vec.push_back(OP_ADD);
+    }
+    if (word == "-") {
+        buf_vec.push_back(OP_SUB);
+    }
+}
+
+/// Kompelliert einen Block von Wörter, der am ende zu einem pointer springt
+/// \param words die Wörter, die kompelliert werden
+/// \param final_jump die Adresse, zu der nach Ausführung des Blocks gesprungen wird
+/// \return pointer zum Vector, der den block enthält (->data() für den u_int8_t* )
+std::vector<u_int8_t> *compile_block(std::vector<std::string> *words) {
+    // wird geleakt, aber aktuell können funktionen nicht geändert werden, also passt das
+    auto* buf_vec = new std::vector<u_int8_t>();
+    for (auto&& word : *words) {
+        compile_word(word, *buf_vec);
+    }
+    return buf_vec;
+}
 
 // Implementiert einen bytecode interpreter
 // Aktuell sehr unvollständig
 u_int8_t *compile_fun(std::string name, std::vector<std::string>* words) {
     auto t1 = std::chrono::high_resolution_clock::now();
-    int number_words_required = 0;
-    number_words_required += 1; // OP_RETURN am ende
-    number_words_required += words->size(); // jedes word oder zahl hat einen opcode
-    // extra platz für die tatsächlichen Zahlen
-    for (auto&& word : *words) {
-        for (auto&& ind_char : word) {
-            if (!isdigit(ind_char)) {
-                // das nächste word muss geprüft werden, ob es eine Zahl ist. Dieses ist es schonmal nicht.
-                goto next_word_iteration;
-            }
-        }
-        // ein int_32 für die zahl
-        number_words_required += 4;
-        next_word_iteration:;
-    }
-    // werden worte aufgerufen?
-    // nativer code (C++) und bytecode Aufrufe brauchen beide 1 OP + 8bytes pointer
-    for (auto&& word : *words) {
-        // native funktionen
-        if (word_map.contains(word)) {
-            number_words_required += 8;
-            continue;
-        }
-        // bytecode
-        if (compiled_word_map.contains(word)) {
-            number_words_required += 8;
-        }
-    }
-    std::vector<u_int8_t>* buf_vec = new std::vector<u_int8_t>();
-    // letzte befehl muss ein return sein
-    int index_buf = 0;
-    for (int i = 0; i < words->size(); ++i) {
-        // C++ funktionen aufrufen
-        if (word_map.contains(words->at(i))) {
-            buf_vec->push_back(OP_CALL_NATIVE);
-            index_buf++;
-
-            std::function<void()>* ptr = &word_map.at(words->at(i));
-            // converts the pointer into an array of bytes
-            u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
-            buf_vec->push_back(ptr_as_bytes[0]);
-            buf_vec->push_back(ptr_as_bytes[1]);
-            buf_vec->push_back(ptr_as_bytes[2]);
-            buf_vec->push_back(ptr_as_bytes[3]);
-            buf_vec->push_back(ptr_as_bytes[4]);
-            buf_vec->push_back(ptr_as_bytes[5]);
-            buf_vec->push_back(ptr_as_bytes[6]);
-            buf_vec->push_back(ptr_as_bytes[7]);
-            index_buf += 8;
-            continue;
-        }
-        // bytecode call
-        if (compiled_word_map.contains(words->at(i))) {
-            buf_vec->push_back(OP_CALL);
-            index_buf++;
-            u_int8_t *ptr = compiled_word_map.at(words->at(i));
-            // converts the pointer into a array of bytes
-            u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
-            buf_vec->push_back(ptr_as_bytes[0]);
-            buf_vec->push_back(ptr_as_bytes[1]);
-            buf_vec->push_back(ptr_as_bytes[2]);
-            buf_vec->push_back(ptr_as_bytes[3]);
-            buf_vec->push_back(ptr_as_bytes[4]);
-            buf_vec->push_back(ptr_as_bytes[5]);
-            buf_vec->push_back(ptr_as_bytes[6]);
-            buf_vec->push_back(ptr_as_bytes[7]);
-            index_buf += 8;
-            continue;
-        }
-        if (words->at(i) == "if") {
-            // if springt, wenn oberste wahr, OP_COND_NEGATE auch.
-            // aber hier wird bei oberste falsch etwas übersprungen, also muss das oberste negiert werden
-            buf_vec->push_back(OP_BOOLEAN_NEGATE);
-            buf_vec->push_back(OP_COND_JUMP);
-            // TODO evtl nur relative sprünge? wäre aufjeden fall kleiner
-            // aber ist der overhead es wert?
-            // oder variabel, relativ oder absolut??
-
-            // reserviert platz für einen pointer also 8 bytes
-            for (int j = 0; j < 8; ++j) {
-                buf_vec->push_back(0);
-            }
-            // der rest wird vom then gemacht.
-        }
-        if (words->at(i) == "then") {
-            // jetzt muss der pointer des ifs gesetzt werden
-            auto ptr = &buf_vec->back();
-            auto temp = ptr;
-            // findet das letzte if ohne gesetzten pointer (notwendig wegen 'if if 5 then then' -ähnlichem code)
-            while (true) {
-                if (*temp == OP_COND_JUMP && *(temp + 1) == 0 &&
-                    *(temp + 2) == 0 &&
-                    *(temp + 3) == 0 &&
-                    *(temp + 4) == 0 &&
-                    *(temp + 5) == 0 &&
-                    *(temp + 6) == 0 &&
-                    *(temp + 7) == 0 &&
-                    *(temp + 7) == 0) {
-                    // hier ist das zugehörige if
-                    u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&ptr));
-                    *(temp + 1) = ptr_as_bytes[0];
-                    *(temp + 2) = ptr_as_bytes[1];
-                    *(temp + 3) = ptr_as_bytes[2];
-                    *(temp + 4) = ptr_as_bytes[3];
-                    *(temp + 5) = ptr_as_bytes[4];
-                    *(temp + 6) = ptr_as_bytes[5];
-                    *(temp + 7) = ptr_as_bytes[6];
-                    *(temp + 8) = ptr_as_bytes[7];
-                    break;
-                }
-                temp--;
-            }
-        }
-        bool is_number = true;
-        for (int j = 0; j < words->at(i).size(); ++j) {
-            if (!isdigit(words->at(i).at(j))) {
-                is_number = false;
-                break;
-            }
-        }
-        if (is_number) {
-            buf_vec->push_back(OP_NUMBER);
-            index_buf++;
-            int int_word = std::atoi(words->at(i).c_str());
-            u_int8_t* int_arr = static_cast<u_int8_t *>(static_cast<void*>(&int_word));
-            buf_vec->push_back(int_arr[0]);
-            buf_vec->push_back(int_arr[1]);
-            buf_vec->push_back(int_arr[2]);
-            buf_vec->push_back(int_arr[3]);
-            index_buf += 4;
-            continue;
-        }
-        if (words->at(i) == "+") {
-            buf_vec->push_back(OP_ADD);
-        }
-        if (words->at(i) == "-") {
-            buf_vec->push_back(OP_SUB);
-        }
-        index_buf++;
-    }
+    std::vector<u_int8_t> *buf_vec = compile_block(words);
     buf_vec->push_back(OP_RETURN);
     auto t2 = std::chrono::high_resolution_clock::now();
     auto ms_int = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
