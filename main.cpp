@@ -237,6 +237,7 @@ enum opcodes : u_int8_t {
     OP_CALL_NATIVE = 5,
     OP_COND_JUMP = 6,
     OP_BOOLEAN_NEGATE = 7,
+    OP_JUMP = 8,
     // TODO die weiteren ops
 };
 
@@ -321,7 +322,12 @@ void compile_word(std::string word, std::vector<u_int8_t>& buf_vec) {
     }
 
     bool is_number = true;
+    bool first_char = true;
     for (int j = 0; j < word.size(); ++j) {
+        // z.B. -1
+        if (first_char && word.at(j) == '-') {
+            continue;
+        }
         if (!isdigit(word.at(j))) {
             is_number = false;
             break;
@@ -352,8 +358,66 @@ void compile_word(std::string word, std::vector<u_int8_t>& buf_vec) {
 /// \return pointer zum Vector, der den block enthält (->data() für den u_int8_t* )
 std::vector<u_int8_t> *compile_block(std::vector<std::string> *words) {
     // wird geleakt, aber aktuell können funktionen nicht geändert werden, also passt das
-    auto* buf_vec = new std::vector<u_int8_t>();
-    for (auto&& word : *words) {
+    std::vector<u_int8_t>* buf_vec = new std::vector<u_int8_t>();
+    // TODO schlimmer hack, eine sinnvolle Lösung machen
+    // tldr: wenn der vector realloctiert wird, nachdem pointer auf ihn wo anders gespeichert wurden, gibt es use after free
+    buf_vec->reserve(128 * words->size());
+    for (int i = 0; i < words->size(); ++i) {
+        auto&& word = words->at(i);
+        if (word == "if") {
+            buf_vec->push_back(OP_COND_JUMP);
+            // findet das dazugehörige then
+            int if_depth = 0;
+            int search_i = i + 1;
+            while (words->at(search_i) != "then" || if_depth != 0) {
+                if (words->at(search_i) == "if") {
+                    if_depth++;
+                }
+                if (words->at(search_i) == "then") {
+                    if_depth--;
+                }
+                search_i++;
+            }
+            // collect all the words which need to be compiled seperately
+            std::vector<std::string> block_words;
+            for (int j = i + 1; j < search_i; ++j) {
+                block_words.push_back(words->at(j));
+            }
+            std::vector<u_int8_t> *block_vec = compile_block(&block_words);
+            // jetzt ist die adresse zu der das if springen muss bekannt.
+            u_int8_t *addr_block = block_vec->data();
+            // bytecode executing will increment the pointer once after it is read by OP_COND_JUMP
+            addr_block--;
+            u_int8_t* ptr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&addr_block));
+            buf_vec->push_back(ptr_as_bytes[0]);
+            buf_vec->push_back(ptr_as_bytes[1]);
+            buf_vec->push_back(ptr_as_bytes[2]);
+            buf_vec->push_back(ptr_as_bytes[3]);
+            buf_vec->push_back(ptr_as_bytes[4]);
+            buf_vec->push_back(ptr_as_bytes[5]);
+            buf_vec->push_back(ptr_as_bytes[6]);
+            buf_vec->push_back(ptr_as_bytes[7]);
+
+
+
+            // am Ende vom Block falls if zutrifft, muss zurückgesprungen werden
+            block_vec->push_back(OP_JUMP);
+            // adresse wo die ausführung weitergeht
+            u_int8_t* after_cond_jump_addr = &(buf_vec->back());
+            u_int8_t* after_cond_jump_addr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&after_cond_jump_addr));
+            block_vec->push_back(after_cond_jump_addr_as_bytes[0]);
+            block_vec->push_back(after_cond_jump_addr_as_bytes[1]);
+            block_vec->push_back(after_cond_jump_addr_as_bytes[2]);
+            block_vec->push_back(after_cond_jump_addr_as_bytes[3]);
+            block_vec->push_back(after_cond_jump_addr_as_bytes[4]);
+            block_vec->push_back(after_cond_jump_addr_as_bytes[5]);
+            block_vec->push_back(after_cond_jump_addr_as_bytes[6]);
+            block_vec->push_back(after_cond_jump_addr_as_bytes[7]);
+            // search_i ist das zugehörige then
+            // wegen der iteration wird als nächstes das nächste word compelliert
+            i = search_i;
+            continue;
+        }
         compile_word(word, *buf_vec);
     }
     return buf_vec;
@@ -444,11 +508,15 @@ void execute_bytecode(u_int8_t* buf) {
                     auto temp_pc_1 = pc + 1;
                     auto temp_pc_2 = (u_int8_t**) temp_pc_1;
                     pc = *temp_pc_2;
+                    // pc ist gerade eins vor dem beginnen des blocks. die incrementieren nach jedem byte fixt das
                 } else {
                     // skipt den pointer
                     pc += 8;
                 }
                 data.pop_back();
+                break;
+            case OP_JUMP:
+                pc = *((u_int8_t **) (pc + 1));
                 break;
             case OP_BOOLEAN_NEGATE:
                 if (data.back() == 0) {
