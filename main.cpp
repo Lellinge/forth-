@@ -369,6 +369,8 @@ std::vector<u_int8_t> *compile_block(std::vector<std::string> *words) {
             // findet das dazugehörige then
             int if_depth = 0;
             int search_i = i + 1;
+            bool has_else = false;
+            int else_i = 0;
             while (words->at(search_i) != "then" || if_depth != 0) {
                 if (words->at(search_i) == "if") {
                     if_depth++;
@@ -376,12 +378,24 @@ std::vector<u_int8_t> *compile_block(std::vector<std::string> *words) {
                 if (words->at(search_i) == "then") {
                     if_depth--;
                 }
+                if (words->at(search_i) == "else" && if_depth == 0) {
+                    has_else = true;
+                    else_i = search_i;
+                }
                 search_i++;
             }
             // collect all the words which need to be compiled seperately
             std::vector<std::string> block_words;
-            for (int j = i + 1; j < search_i; ++j) {
+            int end_of_block_i = has_else ? else_i : search_i;
+            for (int j = i + 1; j < end_of_block_i; ++j) {
                 block_words.push_back(words->at(j));
+            }
+            // Wörter des anderen Blocks
+            std::vector<std::string> else_block_words;
+            if (has_else) {
+                for (int j = else_i + 1; j < search_i; ++j) {
+                    else_block_words.push_back(words->at(j));
+                }
             }
             std::vector<u_int8_t> *block_vec = compile_block(&block_words);
             // jetzt ist die adresse zu der das if springen muss bekannt.
@@ -399,6 +413,38 @@ std::vector<u_int8_t> *compile_block(std::vector<std::string> *words) {
             buf_vec->push_back(ptr_as_bytes[7]);
 
 
+            if (has_else) {
+                // den else block kompellieren
+                std::vector<u_int8_t> *else_vec = compile_block(&else_block_words);
+
+                buf_vec->push_back(OP_JUMP);
+                u_int8_t *addr_else_block = else_vec->data();
+                // the address will be incremented by the interpreter after its read by OP_JUMP
+                addr_else_block--;
+                u_int8_t *addr_else_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&addr_else_block));
+                buf_vec->push_back(addr_else_as_bytes[0]);
+                buf_vec->push_back(addr_else_as_bytes[1]);
+                buf_vec->push_back(addr_else_as_bytes[2]);
+                buf_vec->push_back(addr_else_as_bytes[3]);
+                buf_vec->push_back(addr_else_as_bytes[4]);
+                buf_vec->push_back(addr_else_as_bytes[5]);
+                buf_vec->push_back(addr_else_as_bytes[6]);
+                buf_vec->push_back(addr_else_as_bytes[7]);
+
+                // am ende muss zurück gesprungen werden
+                else_vec->push_back(OP_JUMP);
+
+                u_int8_t *after_jumps_addr = &(buf_vec->back());
+                u_int8_t* after_jumps_addr_as_bytes = static_cast<u_int8_t *>(static_cast<void *>(&after_jumps_addr));
+                else_vec->push_back(after_jumps_addr_as_bytes[0]);
+                else_vec->push_back(after_jumps_addr_as_bytes[1]);
+                else_vec->push_back(after_jumps_addr_as_bytes[2]);
+                else_vec->push_back(after_jumps_addr_as_bytes[3]);
+                else_vec->push_back(after_jumps_addr_as_bytes[4]);
+                else_vec->push_back(after_jumps_addr_as_bytes[5]);
+                else_vec->push_back(after_jumps_addr_as_bytes[6]);
+                else_vec->push_back(after_jumps_addr_as_bytes[7]);
+            }
 
             // am Ende vom Block falls if zutrifft, muss zurückgesprungen werden
             block_vec->push_back(OP_JUMP);
@@ -413,6 +459,7 @@ std::vector<u_int8_t> *compile_block(std::vector<std::string> *words) {
             block_vec->push_back(after_cond_jump_addr_as_bytes[5]);
             block_vec->push_back(after_cond_jump_addr_as_bytes[6]);
             block_vec->push_back(after_cond_jump_addr_as_bytes[7]);
+
             // search_i ist das zugehörige then
             // wegen der iteration wird als nächstes das nächste word compelliert
             i = search_i;
